@@ -43,42 +43,54 @@ async function refreshToken() {
 
     console.log('[3] 현재 URL:', page.url());
 
-    // 4. 어드민 페이지 접속 대기
-    await page.waitForTimeout(2000);
+    // 4. Analytics UTM 페이지 방문 (Ec-Token 생성 필요)
+    console.log('[4] Analytics 페이지 방문 중...');
+    await page.goto('https://lavena.cafe24.com/disp/admin/shop1/menu/cafe24analytics?type=channel-analysis-utm', {
+      waitUntil: 'networkidle2',
+      timeout: 30000
+    });
+    console.log('[4] Analytics 페이지 URL:', page.url());
 
-    // 5. ca-token API 호출
-    console.log('[4] Analytics 토큰 발급 중...');
+    // 5. Analytics 페이지 로딩 대기 (Ec-Token 생성 시간)
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // 6. ca-token API 호출
+    console.log('[5] Analytics 토큰 발급 중...');
     const response = await page.evaluate(async () => {
-      const res = await fetch('https://ca-internal.cafe24data.com/auth/ca-token', {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Origin': 'https://ca-web.cafe24data.com',
-          'Content-Type': 'application/json'
-        }
-      });
-      return res.json();
+      try {
+        const res = await fetch('https://ca-internal.cafe24data.com/auth/ca-token', {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Origin': 'https://ca-web.cafe24data.com',
+            'Content-Type': 'application/json'
+          }
+        });
+        return res.json();
+      } catch (err) {
+        return { error: err.message };
+      }
     });
 
-    console.log('[4] 응답:', JSON.stringify(response));
+    console.log('[5] 응답:', JSON.stringify(response));
 
     if (!response.token) {
       throw new Error('토큰 발급 실패: ' + JSON.stringify(response));
     }
 
-    // 6. Postgres 저장
-    console.log('[5] Postgres 저장 중...');
+    // 7. Postgres 저장
+    console.log('[6] Postgres 저장 중...');
     await pool.query(
       `INSERT INTO analytics_tokens (key, value, updated_at)
        VALUES ('CAFE24_ANALYTICS_TOKEN', $1, NOW())
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       [response.token]
     );
-    console.log('[5] 저장 완료!');
+    console.log('[6] 저장 완료!');
 
-    // 7. Slack 알림 (매일 8시에만)
+    // 8. Slack 알림 (매일 KST 8시 = UTC 23시에만)
     const hour = new Date().getUTCHours();
-    if (hour === 23) { // UTC 23 = KST 8시
+    if (hour === 23) {
       await sendSlackNotification('✅ Analytics 토큰 자동갱신 완료! (매일 오전 8시)');
     }
 
