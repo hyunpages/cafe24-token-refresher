@@ -43,40 +43,43 @@ async function refreshToken() {
 
     console.log('[3] 현재 URL:', page.url());
 
-    // 4. Analytics UTM 페이지 방문 (Ec-Token 생성 필요)
-    console.log('[4] Analytics 페이지 방문 중...');
+    // 4. ca-token 응답 인터셉트 설정
+    console.log('[4] 토큰 인터셉트 설정...');
+    let caToken = null;
+    page.on('response', async (response) => {
+      if (response.url().includes('ca-internal.cafe24data.com/auth/ca-token')) {
+        try {
+          const data = await response.json();
+          console.log('[인터셉트] ca-token 응답:', JSON.stringify(data));
+          if (data.token) caToken = data.token;
+        } catch (e) {
+          console.log('[인터셉트] 파싱 실패:', e.message);
+        }
+      }
+    });
+
+    // 5. Analytics UTM 페이지 방문 (브라우저가 자동으로 ca-token 호출)
+    console.log('[5] Analytics 페이지 방문 중...');
     await page.goto('https://lavena.cafe24.com/disp/admin/shop1/menu/cafe24analytics?type=channel-analysis-utm', {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
-    console.log('[4] Analytics 페이지 URL:', page.url());
+    console.log('[5] Analytics 페이지 URL:', page.url());
 
-    // 5. Analytics 페이지 로딩 대기 (Ec-Token 생성 시간)
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // 6. ca-token API 호출
-    console.log('[5] Analytics 토큰 발급 중...');
-    const response = await page.evaluate(async () => {
-      try {
-        const res = await fetch('https://ca-internal.cafe24data.com/auth/ca-token', {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Origin': 'https://ca-web.cafe24data.com',
-            'Content-Type': 'application/json'
-          }
-        });
-        return res.json();
-      } catch (err) {
-        return { error: err.message };
-      }
-    });
-
-    console.log('[5] 응답:', JSON.stringify(response));
-
-    if (!response.token) {
-      throw new Error('토큰 발급 실패: ' + JSON.stringify(response));
+    // 6. 토큰 대기 (최대 10초)
+    let waited = 0;
+    while (!caToken && waited < 10000) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      waited += 500;
     }
+
+    console.log('[6] 최종 토큰:', caToken ? caToken.substring(0, 20) + '...' : 'null');
+
+    if (!caToken) {
+      throw new Error('토큰 발급 실패: ca-token 응답 없음');
+    }
+
+    const response = { token: caToken };
 
     // 7. Postgres 저장
     console.log('[6] Postgres 저장 중...');
