@@ -93,7 +93,7 @@ async function refreshToken() {
 
     // 8. Slack 알림 (매일 KST 8시 = UTC 23시에만)
     const hour = new Date().getUTCHours();
-    if (hour === 23) {
+    if (hour === 0) {
       await sendSlackNotification('✅ Analytics 토큰 자동갱신 완료! (매일 오전 8시)');
     }
 
